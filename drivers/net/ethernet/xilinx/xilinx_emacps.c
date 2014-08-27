@@ -2592,6 +2592,11 @@ static int xemacps_probe(struct platform_device *pdev)
 	u32 regval = 0;
 	int rc = -ENXIO;
 
+	/******** ApisSys PATCH  Start ***********/
+	int has_mdio = 0;
+	const void * has_mdio_prop = NULL;
+	/******** ApisSys PATCH  End ***********/
+
 	r_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	r_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (!r_mem || !r_irq) {
@@ -2698,6 +2703,10 @@ static int xemacps_probe(struct platform_device *pdev)
 						"phy-handle", 0);
 	lp->gmii2rgmii_phy_node = of_parse_phandle(lp->pdev->dev.of_node,
 						"gmii2rgmii-phy-handle", 0);
+
+	if(lp->phy_node) dev_dbg(&lp->pdev->dev,"phy node: 0x%x", (unsigned int)(lp->phy_node));
+	if(lp->gmii2rgmii_phy_node) dev_dbg(&lp->pdev->dev,"gmii2rgmii phy node: 0x%x",  (unsigned int)(lp->gmii2rgmii_phy_node));
+
 	rc = of_get_phy_mode(lp->pdev->dev.of_node);
 	if (rc < 0) {
 		dev_err(&lp->pdev->dev, "error in getting phy i/f\n");
@@ -2705,6 +2714,8 @@ static int xemacps_probe(struct platform_device *pdev)
 	}
 
 	lp->phy_interface = rc;
+
+	dev_dbg(&lp->pdev->dev,"Phy mode: %d", lp->phy_interface);
 
 	/* Set MDIO clock divider */
 	regval = (MDC_DIV_224 << XEMACPS_NWCFG_MDC_SHIFT_MASK);
@@ -2714,11 +2725,29 @@ static int xemacps_probe(struct platform_device *pdev)
 	regval = XEMACPS_NWCTRL_MDEN_MASK;
 	xemacps_write(lp->baseaddr, XEMACPS_NWCTRL_OFFSET, regval);
 
-	rc = xemacps_mii_init(lp);
-	if (rc) {
-		dev_err(&lp->pdev->dev, "error in xemacps_mii_init\n");
-		goto err_out_unregister_clk_notifier;
+	/******** ApisSys PATCH  Start ***********/
+	has_mdio_prop = of_get_property(lp->pdev->dev.of_node, "xlnx,has-mdio", NULL);
+	if(has_mdio_prop!=NULL){
+		has_mdio = *((int *)has_mdio_prop);
 	}
+
+	dev_dbg(&lp->pdev->dev, "Has MDIO : %d\n",has_mdio);
+
+
+
+	if(has_mdio){
+
+		rc = xemacps_mii_init(lp);
+		if (rc) {
+			dev_err(&lp->pdev->dev, "error in xemacps_mii_init\n");
+			goto err_out_unregister_clk_notifier;
+		}
+	}else{
+
+		lp->mii_bus = NULL;
+
+	}
+	/******** ApisSys PATCH  End ***********/
 
 	xemacps_update_hwaddr(lp);
 	tasklet_init(&lp->tx_bdreclaim_tasklet, xemacps_tx_poll,
@@ -2779,9 +2808,13 @@ static int __exit xemacps_remove(struct platform_device *pdev)
 	if (ndev) {
 		lp = netdev_priv(ndev);
 
-		mdiobus_unregister(lp->mii_bus);
-		kfree(lp->mii_bus->irq);
-		mdiobus_free(lp->mii_bus);
+		/******** ApisSys PATCH  Start ***********/
+		if(lp->mii_bus!=NULL){
+			mdiobus_unregister(lp->mii_bus);
+			kfree(lp->mii_bus->irq);
+			mdiobus_free(lp->mii_bus);
+		}
+		/******** ApisSys PATCH  End ***********/
 		unregister_netdev(ndev);
 		free_irq(ndev->irq, ndev);
 		iounmap(lp->baseaddr);
